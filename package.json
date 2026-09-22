@@ -1,0 +1,66 @@
+{
+  "name": "dsh-desktop-uia",
+  "version": "1.0.0",
+  "description": "Windows desktop control for DeepSeek Harness through UI Automation: read a window's control tree, drive elements by id, approve every write, and watch it all in the settings panel.",
+  "license": "MIT",
+  "author": "1jiegejiayouxuewangan1",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "sidecar/Program.cs",
+    "sidecar/UiaSidecar.cs",
+    "sidecar/UiaSidecar.manifest",
+    "sidecar/build.ps1",
+    "sidecar/UiaSidecar.exe",
+    "sidecar/build-info.json",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "使用说明.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File sidecar/build.ps1",
+    "doctor": "node scripts/doctor.mjs",
+    "test": "node --import ./test/helpers/register.mjs --test \"test/*.test.mjs\"",
+    "test:live": "node --import ./test/helpers/register.mjs --test test/sidecar.live.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "dsh-bundle",
+    "deepseek-harness",
+    "cordis-plugin",
+    "ui-automation",
+    "desktop-automation",
+    "windows",
+    "computer-use",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia.git"
+  },
+  "homepage": "https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia#readme",
+  "bugs": {
+    "url": "https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

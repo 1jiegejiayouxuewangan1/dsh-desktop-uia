@@ -1,0 +1,8 @@
+# Canonical line endings live in the repository; a Windows working tree gets CRLF
+# for the script and source kinds whose tooling expects it.
+* text=auto
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.cs text eol=crlf
+*.manifest text eol=crlf
+*.exe binary

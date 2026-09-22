@@ -1,0 +1,18 @@
+# dsh-desktop-uia bundle patch: mounts the plugin into a dsh profile's host
+# composition. The row registers the desktop_* tools into the shared `tools`
+# registry, one agent-facing usage section, and the settings panel routes.
+#
+# Install:
+#   dsh plugin --profile web add <path-or-package>
+#
+# The `config` block below only seeds settings for a fresh install. Everything a
+# user is expected to change (approval mode, trusted/denied processes, snapshot
+# caps) lives in <DSH_HOME>/storages/dsh-desktop-uia/settings.json and is edited
+# from Settings → 桌面控制 in the GUI.
+- insert:
+    - id: desktop-uia
+      name: 'dsh-desktop-uia'
+      config:
+        # Position of the usage section inside the system prompt; the value only
+        # needs to sit among the other tool sections.
+        promptSectionOrder: 118

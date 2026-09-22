@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: build + test (windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Proves the "no toolchain required" claim: the sidecar is compiled by the
+      # .NET Framework compiler that ships inside Windows, with no SDK and no
+      # package downloads.
+      - name: Build the sidecar with the in-box C# compiler
+        shell: pwsh
+        run: ./sidecar/build.ps1
+
+      - name: Report the build stamp
+        shell: pwsh
+        run: Get-Content ./sidecar/build-info.json
+
+      - name: Unit and integration tests
+        shell: pwsh
+        run: node --import ./test/helpers/register.mjs --test "test/*.test.mjs"
+
+      # Informational: the live checks need a real interactive desktop, which a
+      # hosted runner may not provide. A failure here does not fail the build.
+      - name: Doctor (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: node scripts/doctor.mjs

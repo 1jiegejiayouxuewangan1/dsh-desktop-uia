@@ -1,0 +1,20 @@
+# Build artifacts: the sidecar is compiled locally by sidecar/build.ps1, which
+# uses the C# compiler that ships inside Windows. Nothing here needs to be
+# committed, and install.ps1 builds it automatically on a fresh clone.
+sidecar/UiaSidecar.exe
+sidecar/UiaSidecar.pdb
+sidecar/build-info.json
+
+# Node
+node_modules/
+package-lock.json
+
+# Local run artifacts
+.doctor-storage/
+*.log
+*.tmp
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store
