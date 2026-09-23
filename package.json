@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-uia",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Windows desktop control for DeepSeek Harness through UI Automation: read a window's control tree, drive elements by id, approve every write, and watch it all in the settings panel.",
   "license": "MIT",
   "author": "1jiegejiayouxuewangan1",

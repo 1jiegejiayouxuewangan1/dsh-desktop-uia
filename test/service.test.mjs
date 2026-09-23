@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { DesktopRuntime, requiresApproval } from '../lib/service.js'
-import { renderWindowChanges } from '../lib/format.js'
+import { renderDiff, renderWindowChanges } from '../lib/format.js'
 import { fakeCtx, fakeSidecar, sampleSnapshot, tempStore } from './helpers/fakes.mjs'
 
 async function runtimeWith(handlers, config = {}) {
@@ -277,4 +277,48 @@ test('elementRecord finds the patterns a recent snapshot reported', async () => 
   } finally {
     await cleanup()
   }
+})
+
+test('a query snapshot never becomes the diff baseline', async () => {
+  let query = false
+  const { runtime, cleanup } = await runtimeWith({
+    snapshot: () => (query
+      ? { window: sampleSnapshot().window, query: { interactiveOnly: true }, matchCount: 0, matches: [] }
+      : sampleSnapshot()),
+  })
+  try {
+    await runtime.snapshot({ title: '记事本' })
+    query = true
+    await runtime.snapshot({ query: { interactiveOnly: true }, limit: 5 })
+    query = false
+    // The verification after an action must compare against the last real tree,
+    // not against a match list that carries no tree at all.
+    const { diff } = await runtime.snapshot({ hwnd: '0x0000A1B2' }, { diff: true })
+    assert.equal(diff.first, false, 'the tree snapshot before the query is still the baseline')
+    assert.deepEqual({ added: diff.added, removed: diff.removed, changed: diff.changed }, { added: 0, removed: 0, changed: 0 })
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a truncated verification diff is not treated as "the action did nothing"', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot({ truncated: true }) })
+  try {
+    await runtime.snapshot({ title: '记事本' })
+    const second = await runtime.snapshot({ hwnd: '0x0000A1B2' }, { diff: true, observed: false })
+    assert.equal(second.diff.truncated, true)
+    assert.equal(DesktopRuntime.diffIsNoOp(second.diff), false, 'a capped tree cannot prove the action did nothing')
+    assert.match(renderDiff(second.diff), /no change within the snapshot caps/u)
+    assert.match(renderDiff(second.diff), /raise maxDepth\/maxNodes/u)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('diffIsNoOp only trusts a complete, non-first, empty diff', () => {
+  assert.equal(DesktopRuntime.diffIsNoOp(undefined), false)
+  assert.equal(DesktopRuntime.diffIsNoOp({ first: true, added: 5 }), false)
+  assert.equal(DesktopRuntime.diffIsNoOp({ first: false, added: 0, removed: 0, changed: 0 }), true)
+  assert.equal(DesktopRuntime.diffIsNoOp({ first: false, added: 0, removed: 0, changed: 0, truncated: true }), false)
+  assert.equal(DesktopRuntime.diffIsNoOp({ first: false, added: 0, removed: 1, changed: 0 }), false)
 })
