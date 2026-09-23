@@ -16,7 +16,7 @@ Agent ──▶ desktop_* tools (host plugin: approval + audit + rendering)
                  └─▶ browser panel (Settings → Desktop control): windows / tree / action log / policy
 ```
 
-> Chinese docs: [技术说明](README.zh-CN.md) · [使用说明（面向使用者）](使用说明.md)
+> Docs: **[English user guide](GUIDE.md)** · [中文使用说明](使用说明.md) · [中文技术说明](README.zh-CN.md)
 
 ---
 
@@ -32,14 +32,20 @@ Agent ──▶ desktop_* tools (host plugin: approval + audit + rendering)
 
 ## Install
 
+**Easiest, no command line:** download the zip from
+[Releases](https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia/releases), unzip it anywhere and
+**double-click `install.cmd`**. That package already contains a compiled sidecar, so nothing is built;
+the script installs the plugin into your DSH profile and runs a self-check. Restart DSH Desktop afterwards.
+
+**From a clone or the source folder:**
+
 ```powershell
-# from this repository
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 The script:
 
-1. builds `sidecar\UiaSidecar.exe` with the in-box compiler,
+1. builds `sidecar\UiaSidecar.exe` with the in-box compiler — skipped when a compiled exe is already there, and forced with `-Rebuild`,
 2. runs `pnpm add file:<this folder>` inside the profile, so the plugin lands in the profile's own `node_modules`,
 3. adds `dsh-desktop-uia` to the profile's `dsh.profile.bundles` layer list,
 4. verifies the manifest is still valid JSON and that package, dependency and layer are all in place,
@@ -52,7 +58,7 @@ Then **restart DSH Desktop** (or reload the profile). The `desktop_*` tools and 
 install.ps1 -Profile web -DshHome "D:\dsh-home" -AppRoot "D:\DSH\resources\app" -NoBuild -SkipDoctor
 
 # update after editing the source (the profile holds a real copy, so re-run it)
-install.ps1
+install.ps1 -Rebuild
 
 # uninstall (-Purge also deletes stored settings and the action log)
 uninstall.ps1 [-Purge]
@@ -132,7 +138,7 @@ Ask in plain language — the model picks the tools:
 >
 > Type "tomorrow's todos" into Notepad and press Ctrl+S.
 
-Practical rules: name the target window, keep to one step at a time, and when something looks wrong ask it to re-read the current state. The Chinese end-user guide ([使用说明.md](使用说明.md)) goes further, including what to do when a window exposes no controls at all.
+Practical rules: name the target window, keep to one step at a time, and when something looks wrong ask it to re-read the current state. The [user guide](GUIDE.md) goes further — including what to do when a window exposes no controls at all. 中文说明：[使用说明.md](使用说明.md)。
 
 ---
 
@@ -195,8 +201,9 @@ dsh-desktop-uia/
 │   └── build.ps1           # compiles with the in-box csc.exe
 ├── scripts/doctor.mjs      # end-to-end diagnostics
 ├── test/                   # node:test suites + fake ctx / fake sidecar / React shim
+├── install.cmd / uninstall.cmd        # double-click entry points (release package)
 ├── install.ps1 / uninstall.ps1
-└── README.md · README.zh-CN.md · 使用说明.md
+└── README.md · GUIDE.md · README.zh-CN.md · 使用说明.md
 ```
 
 ---

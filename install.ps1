@@ -18,6 +18,7 @@ param(
     [string]$DshHome,
     [string]$AppRoot,
     [switch]$NoBuild,
+    [switch]$Rebuild,
     [switch]$SkipDoctor
 )
 
@@ -109,8 +110,14 @@ if (-not (Test-Path -LiteralPath $profileDir)) {
 }
 
 # ---------------------------------------------------------------------- build
+# A release package already ships a compiled sidecar, so an existing exe is kept
+# and no compiler is touched. -Rebuild forces a fresh compile from source; a
+# missing exe is always built.
+$sidecarExe = Join-Path $pluginRoot 'sidecar\UiaSidecar.exe'
 if ($NoBuild) {
     Write-Step 'skipping the sidecar build (-NoBuild)'
+} elseif ((Test-Path -LiteralPath $sidecarExe) -and -not $Rebuild) {
+    Write-Step "sidecar already built: $sidecarExe (pass -Rebuild to recompile from source)"
 } else {
     Write-Step 'building the sidecar (in-box C# compiler, no SDK required)'
     $buildCode = Invoke-Native -FilePath 'powershell.exe' -Arguments @(
@@ -118,7 +125,7 @@ if ($NoBuild) {
         '-File', (Join-Path $pluginRoot 'sidecar\build.ps1'), '-Force'
     )
     if ($buildCode -ne 0) { throw 'the sidecar build failed' }
-    if (-not (Test-Path -LiteralPath (Join-Path $pluginRoot 'sidecar\UiaSidecar.exe'))) { throw 'the sidecar build produced no executable' }
+    if (-not (Test-Path -LiteralPath $sidecarExe)) { throw 'the sidecar build produced no executable' }
 }
 
 # ---------------------------------------------------------------------- pnpm

@@ -6,7 +6,7 @@
 
 > **只想拿来用？** 看 [`使用说明.md`](使用说明.md)（面向使用者，白话版：能做什么、怎么跟 AI 说、审批怎么设、常见问题）。
 > 本文件是面向开发者/维护者的完整技术说明。
-> **English**: [`README.md`](README.md) — the primary README for this repository.
+> **English**: [`README.md`](README.md)（主文档）· [`GUIDE.md`](GUIDE.md)（英文使用说明）
 
 ```
 Agent ──▶ desktop_* 工具（宿主插件，含审批与审计）──▶ UiaSidecar.exe（C#/.NET，UI Automation + 输入注入）──▶ 目标应用
@@ -78,6 +78,10 @@ Agent ──▶ desktop_* 工具（宿主插件，含审批与审计）──▶
 
 ## 4. 安装
 
+**最省事的方式（不用命令行）**：到 [Releases](https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia/releases) 下载 zip，解压到任意目录，**双击 `install.cmd`**。压缩包里已经带了编译好的旁车，所以不会触发任何编译；脚本会把插件装进你的 DSH profile 并跑一次自检。装完重启 DSH Desktop。
+
+**从源码目录安装：**
+
 ```powershell
 # 工作区里的插件目录下
 powershell -ExecutionPolicy Bypass -File install.ps1            # 默认装到 web profile
@@ -86,14 +90,14 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Profile web -DshHome "D:\d
 
 安装脚本会：
 
-1. 用系统自带的 .NET Framework C# 编译器（`csc.exe`）编译旁车，**不需要 .NET SDK、不需要 NuGet、不需要联网**；
+1. 用系统自带的 .NET Framework C# 编译器（`csc.exe`）编译旁车（**已有编译好的 exe 就跳过**，`-Rebuild` 强制重编），**不需要 .NET SDK、不需要 NuGet、不需要联网**；
 2. 在 profile 目录里执行 `pnpm add file:<插件目录>`；
 3. 把插件名加进 profile 的 `dsh.profile.bundles` 分层列表（用 `dsh plugin add` 时由它自己完成）；
 4. 校验 profile 清单仍是合法 JSON、依赖、分层、安装目录都在，然后跑一次 doctor。
 
 **必须重启 DSH Desktop**（或在应用里重载 profile）后宿主半才会挂载，`desktop_*` 工具和面板才会出现。
 
-更新：改完源码后重跑 `install.ps1`（`file:` 安装是 profile 内的**真实副本**，需要重新拷一次）。
+更新：改完源码后重跑 `install.ps1 -Rebuild`（`file:` 安装是 profile 内的**真实副本**，需要重新拷一次）。
 卸载：
 
 ```powershell
@@ -157,8 +161,9 @@ dsh-desktop-uia/
 │   └── build.ps1          # 用系统 csc.exe 编译
 ├── scripts/doctor.mjs     # 端到端自检
 ├── test/                  # node:test 套件 + 假 ctx / 假旁车 / React 垫片
+├── install.cmd / uninstall.cmd    # 双击即用（Release 压缩包里的入口）
 ├── install.ps1 / uninstall.ps1
-└── README.md
+└── README.md · GUIDE.md · README.zh-CN.md · 使用说明.md
 ```
 
 ---
