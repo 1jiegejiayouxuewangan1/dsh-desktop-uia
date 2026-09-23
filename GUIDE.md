@@ -78,6 +78,8 @@ You can change this in the panel:
 
 ## 5. The panel (Settings → Desktop control)
 
+![The panel: service state, window list, control tree, element details, action log](docs/images/panel.png)
+
 | Section | What it shows |
 | --- | --- |
 | **Service** | Whether the background helper is running, its PID, elevation state; buttons to refresh / self-test / restart it |

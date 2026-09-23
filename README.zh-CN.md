@@ -8,6 +8,10 @@
 > 本文件是面向开发者/维护者的完整技术说明。
 > **English**: [`README.md`](README.md)（主文档）· [`GUIDE.md`](GUIDE.md)（英文使用说明）
 
+![面板：服务状态、窗口列表、控件树、元素详情、动作日志](docs/images/panel.png)
+
+*设置 →「桌面控制」：服务状态、实时窗口列表、带元素详情的控件树、动作日志。*
+
 ```
 Agent ──▶ desktop_* 工具（宿主插件，含审批与审计）──▶ UiaSidecar.exe（C#/.NET，UI Automation + 输入注入）──▶ 目标应用
                      │

@@ -2487,6 +2487,23 @@ namespace DshUia
                 Directory.CreateDirectory(dir);
                 path = Path.Combine(dir, "shot-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture) + ".png");
             }
+            else
+            {
+                // A caller-supplied path may point into a folder that does not exist
+                // yet. Creating it here keeps GDI+ from failing with its opaque
+                // "A generic error occurred in GDI+" message.
+                try
+                {
+                    string parent = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent)) Directory.CreateDirectory(parent);
+                }
+                catch (Exception ex)
+                {
+                    throw new Fail("BAD_PATH",
+                        "cannot create the folder for " + path + ": " + ex.Message,
+                        "Pass a path inside an existing folder, or one this process may create.");
+                }
+            }
 
             string method;
             bool occluded = false;

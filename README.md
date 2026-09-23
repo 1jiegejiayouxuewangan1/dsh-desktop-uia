@@ -18,6 +18,10 @@ Agent ──▶ desktop_* tools (host plugin: approval + audit + rendering)
 
 > Docs: **[English user guide](GUIDE.md)** · [中文使用说明](使用说明.md) · [中文技术说明](README.zh-CN.md)
 
+![The plugin panel in DSH: service state, window list, control tree, element details and action log](docs/images/panel.png)
+
+*Settings → Desktop control: service state, the live window list, the control tree with element details, and the action log.*
+
 ---
 
 ## Requirements
