@@ -41,6 +41,16 @@ Agent ──▶ desktop_* 工具（宿主插件，含审批与审计）──▶
 
 元素 id（`el_12`）按 UIA 运行期标识生成，窗口重建后会失效；此时工具会明确报 `STALE_ELEMENT` 并提示重新快照，而不是静默失败。
 
+### 让模型"看得见后果"的四条反馈（1.1）
+
+看不见屏幕的模型会犯固定几类错，所以这四种情况直接写进工具返回里，模型在需要的那一刻就会读到：
+
+* **动作弹出的新窗口**：每个写操作前后都比对一次桌面窗口集合，新出现的窗口会被点名——`new window appeared: "另存为" (notepad pid=111) — snapshot hwnd 0x22 to work there`。点击弹出的对话框、启动产生的第二个窗口都不会再被忽略；`desktop_launch` 额外等待最多 5 秒，把新窗口句柄直接报出来。
+* **读取很慢的窗口**：按进程记录读取耗时。Chromium/Java 这类枚举本身就慢的窗口会被点明，建议改用 `desktop_snapshot` 的 `query {name|type|aid}` 只取一个元素；从下一次读取起自动收紧（`maxNodes` 300、`maxDepth` 5），除非调用方显式要求更大。
+* **重复的无效点击**：同一元素连续两次 `click`/`doubleClick`/`invoke` 都以 `no structural change` 结束时，第二次会标注（`this is no-op click number 2…`），**第三次相同点击直接拒绝**，并提示先 `desktop_inspect` 看清状态、必要时滚动到可见，或改用 `setValue`/`select`/`expand`/`toggle`。带状态的控件（复选框、下拉框、滑块、滚动条——`toggle`、`expandCollapse`、`selectItem`、`rangeValue`、`scroll`、`value`）不受此限，因为它们的"变化"本来就未必体现在结构差异里。重新 `desktop_snapshot` 会清零计数，`desktop_act {force: true}` 可强制放行。
+* **被上限截断的读取**：结果里直接说明被截断，以及该调大哪个上限。
+
+
 ---
 
 ## 2. 审批与安全
@@ -116,13 +126,15 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1          # 加 -Purge 连
 ## 5. 验证
 
 ```powershell
-node --test "test/*.test.mjs"          # 61 个用例：格式、策略、存储、运行时、9 个工具、浏览器半渲染
+node --test "test/*.test.mjs"          # 84 个用例：格式、策略、存储、运行时、9 个工具、面板渲染 + 真实 DOM 交互
 node scripts/doctor.mjs                # 端到端自检：编译/机器/旁车/真实桌面/工具层全链路
 $env:DSH_UIA_LIVE=1; node --test "test/sidecar.live.test.mjs"   # 真机旁车集成测试
 sidecar\build.ps1 -SelfTest            # 只测旁车
 ```
 
-`scripts/doctor.mjs` 会真读你当前桌面：列窗口、快照前台窗口、按 query 找元素、点坐标反查窗口、截图、读剪贴板，最后把 9 个工具注册起来跑 `desktop_windows` / `desktop_snapshot` / `desktop_screenshot`。任一项失败都会给出原因。
+面板跑两遍：一遍用 hook 替身只检查渲染结果，一遍用真 React 挂载进 jsdom，额外验证首次加载、点窗口读控件树、点元素看详情、改设置后发出的请求体（`react` / `react-dom` / `jsdom` 是开发依赖，缺了会自动跳过）。
+
+`scripts/doctor.mjs` 会真读你当前桌面：列窗口、快照前台窗口、按 query 找元素、点坐标反查窗口、**校验坐标不变量**（元素矩形中心反查窗口必须落回它自己的窗口，DPI/虚拟屏错位只有这一项能发现）、截图、读剪贴板，最后把 9 个工具注册起来跑 `desktop_windows` / `desktop_snapshot` / `desktop_screenshot`。它还会比对 profile 里那份已安装副本与当前源码是否一致，不一致会直接报 `stale` 并提示跑 `scripts/dev-sync.ps1`。任一项失败都会给出原因。
 
 ---
 
@@ -133,7 +145,9 @@ sidecar\build.ps1 -SelfTest            # 只测旁车
 | 工具返回 `elevated`/访问被拒 | 目标程序以管理员运行。以管理员身份启动 DSH 后重试。 |
 | `STALE_ELEMENT` / `UNKNOWN_ELEMENT` | 窗口重建，id 过期。重新 `desktop_snapshot`。 |
 | 终端/游戏/画图类窗口控件很少 | 这类应用是自绘的，UIA 只能看到外壳。用 `desktop_screenshot` 兜底，或对该窗口用坐标点击（`point`）。 |
-| Electron/Chromium 类窗口读得慢 | 这类提供程序本身慢（基础读取约 1~2s，与元素数不成比例）。用 `patterns:"none"` 取最快读取，或用 `query` 只找需要的元素。 |
+| Electron/Chromium 类窗口读得慢 | 这类提供程序本身慢（基础读取约 1~2s，与元素数不成比例）。工具会点名并自动收紧下一次读取；也可用 `patterns:"none"` 取最快读取，或用 `query` 只找需要的元素。 |
+| 改了源码但行为没变 | DSH 加载的是 `<DSH_HOME>\profiles\<profile>\node_modules\dsh-desktop-uia` 里的副本。跑 `scripts/dev-sync.ps1` 后重启 DSH；`doctor` 会检查该项。 |
+| 同一个按钮连点三次被拒 | 这是重复无效点击守卫（第 1 节第 3 条）。重新快照 / `desktop_inspect` 看清状态，或加 `force: true`。 |
 | 截图报 `WINDOW_MINIMIZED` / `WINDOW_OCCLUDED` | 最小化的窗口没有像素；被完全遮挡且窗口自身不支持 PrintWindow 时先切前台。 |
 | 坐标点击落在错误位置 | 多显示器混合缩放。旁车已声明 PerMonitorV2（应用清单），若仍异常，请用元素 id 而不是坐标。 |
 | 旁车崩溃或响应超时 | 旁车按请求隔离线程，超时会返回 `TIMEOUT` 并保持可用；连续 5 次卡死才自重启（宿主下次调用时自动拉起）。 |
@@ -163,8 +177,10 @@ dsh-desktop-uia/
 │   ├── Program.cs         # 行协议、看门狗、错误码、--selftest
 │   ├── UiaSidecar.manifest# PerMonitorV2 + asInvoker
 │   └── build.ps1          # 用系统 csc.exe 编译
-├── scripts/doctor.mjs     # 端到端自检
-├── test/                  # node:test 套件 + 假 ctx / 假旁车 / React 垫片
+├── scripts/
+│   ├── doctor.mjs         # 端到端自检（含"已安装副本是否陈旧"与坐标不变量校验）
+│   └── dev-sync.ps1       # 把当前源码同步到 DSH 实际加载的 profile 副本
+├── test/                  # node:test 套件 + 假 ctx / 假旁车 / React 垫片 / 真实 DOM 面板套件
 ├── install.cmd / uninstall.cmd    # 双击即用（Release 压缩包里的入口）
 ├── install.ps1 / uninstall.ps1
 └── README.md · GUIDE.md · README.zh-CN.md · 使用说明.md

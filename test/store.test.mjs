@@ -102,3 +102,35 @@ test('audit can be switched off, keeping the in-memory ring only', async () => {
     await cleanup()
   }
 })
+
+test('read-only calls are recorded by default and dropped when auditReads is off', async () => {
+  const { store, cleanup } = await tempStore()
+  try {
+    assert.equal(store.settings.behavior.auditReads, true, 'reads are audited out of the box')
+    await store.audit({ tool: 'desktop_snapshot', action: 'tree', outcome: 'read' })
+    assert.equal((await store.snapshot()).audit.length, 1)
+
+    await store.update({ behavior: { auditReads: false } })
+    await store.audit({ tool: 'desktop_snapshot', action: 'tree', outcome: 'read' })
+    await store.audit({ tool: 'desktop_act', action: 'click', outcome: 'executed' })
+    const rows = (await store.snapshot()).audit
+    assert.equal(rows.length, 2, 'the earlier read stays in the ring; the new one never enters it')
+    assert.deepEqual(rows.map((row) => row.outcome), ['executed', 'read'])
+    assert.equal(rows.filter((row) => row.outcome === 'read').length, 1, 'only the pre-toggle read remains')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('auditReads survives a round trip through the settings file', async () => {
+  const { dir, store, cleanup } = await tempStore()
+  try {
+    await store.update({ behavior: { auditReads: false } })
+    const { Store } = await import('../lib/store.js')
+    const reloaded = new Store({ dir, config: {}, logger: undefined })
+    await reloaded.ready()
+    assert.equal(reloaded.settings.behavior.auditReads, false)
+  } finally {
+    await cleanup()
+  }
+})

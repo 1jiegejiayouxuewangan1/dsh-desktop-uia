@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-uia",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows desktop control for DeepSeek Harness through UI Automation: read a window's control tree, drive elements by id, approve every write, and watch it all in the settings panel.",
   "license": "MIT",
   "author": "1jiegejiayouxuewangan1",
@@ -43,6 +43,7 @@
   "scripts": {
     "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File sidecar/build.ps1",
     "doctor": "node scripts/doctor.mjs",
+    "dev-sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-sync.ps1",
     "test": "node --import ./test/helpers/register.mjs --test \"test/*.test.mjs\"",
     "test:live": "node --import ./test/helpers/register.mjs --test test/sidecar.live.test.mjs"
   },
@@ -68,5 +69,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

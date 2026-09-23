@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { DesktopRuntime, requiresApproval } from '../lib/service.js'
+import { renderWindowChanges } from '../lib/format.js'
 import { fakeCtx, fakeSidecar, sampleSnapshot, tempStore } from './helpers/fakes.mjs'
 
 async function runtimeWith(handlers, config = {}) {
@@ -116,4 +117,164 @@ test('renderActionText explains the method and the diff', () => {
   assert.match(text, /click Button "保存" \[el_2\] via InvokePattern/u)
   assert.match(text, /window "记事本" \(notepad\)/u)
   assert.match(text, /changed: \+1 -0 ~0/u)
+})
+
+test('a window the action opened is reported by name and hwnd', async () => {
+  const before = [{ hwnd: '0x1', process: 'notepad', title: '记事本' }]
+  const after = [...before, { hwnd: '0x2', process: 'notepad', title: '另存为' }]
+  const { runtime, cleanup } = await runtimeWith({ window: () => ({ windows: after }) })
+  try {
+    const changes = await runtime.windowChanges(before)
+    assert.equal(changes.appeared.length, 1)
+    assert.equal(changes.appeared[0].hwnd, '0x2')
+
+    const text = DesktopRuntime.renderActionText(
+      { action: 'click', id: 'el_2', element: { type: 'Button', name: '保存' } },
+      { first: false, added: 0, removed: 0, changed: 0, lines: [], suppressed: 0 },
+      { windows: changes, repeat: 1 },
+    )
+    assert.match(text, /no structural change/u)
+    assert.match(text, /no-op click number 1/u)
+    assert.match(text, /new window appeared: "另存为" \(notepad\)/u)
+    assert.match(text, /snapshot hwnd 0x2/u)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a window that closes is reported too, and an unchanged desktop says nothing', async () => {
+  const before = [{ hwnd: '0x1', process: 'notepad', title: '记事本' }, { hwnd: '0x2', process: 'notepad', title: '另存为' }]
+  let current = [{ hwnd: '0x2', process: 'notepad', title: '另存为' }]
+  const { runtime, cleanup } = await runtimeWith({ window: () => ({ windows: current }) })
+  try {
+    const changes = await runtime.windowChanges(before)
+    assert.equal(changes.gone.length, 1)
+    assert.match(renderWindowChanges(changes), /^window closed: "记事本"/u)
+
+    current = [...before]
+    assert.equal(await runtime.windowChanges(before), undefined, 'an unchanged window set is not worth a line')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('waitForNewWindow resolves as soon as a window appears', async () => {
+  const before = [{ hwnd: '0x1', process: 'notepad', title: '记事本' }]
+  const answers = [before, before, [...before, { hwnd: '0x9', process: 'calc', title: '计算器', minimized: false }]]
+  let index = 0
+  const { runtime, cleanup } = await runtimeWith({ window: () => ({ windows: answers[Math.min(index++, answers.length - 1)] }) })
+  try {
+    const opened = await runtime.waitForNewWindow(before, 2000)
+    assert.equal(opened?.hwnd, '0x9')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a slow provider is advised about and gets a smaller default tree', async () => {
+  const { runtime, sidecar, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot({ elapsedMs: 7000 }) }, {
+    behavior: { maxDepth: 6, maxNodes: 800 },
+  })
+  try {
+    const first = await runtime.snapshot({ title: '记事本' })
+    assert.match(runtime.slowReadNote(first.result, first.elapsedMs), /took 7000 ms/u)
+    assert.match(runtime.slowReadNote(first.result, first.elapsedMs), /read one element at a time with desktop_snapshot query/u)
+
+    // The next read of the same process is capped, so a slow provider is not read
+    // at full size again.
+    const second = await runtime.snapshot({ hwnd: '0x0000A1B2' })
+    assert.equal(sidecar.calls[1].params.maxNodes, 300)
+    assert.equal(sidecar.calls[1].params.maxDepth, 5)
+    assert.match(runtime.slowReadNote(second.result, second.elapsedMs), /capped automatically/u)
+
+    // An explicit request still wins over the automatic cap.
+    await runtime.snapshot({ hwnd: '0x0000A1B2', maxNodes: 2000, maxDepth: 9 })
+    assert.equal(sidecar.calls[2].params.maxNodes, 2000)
+    assert.equal(sidecar.calls[2].params.maxDepth, 9)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a fast provider is left alone', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot({ elapsedMs: 40 }) })
+  try {
+    const { result, elapsedMs } = await runtime.snapshot({ title: '记事本' })
+    assert.equal(runtime.slowReadNote(result, elapsedMs), '')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a truncated tree is called out even when the read was fast', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot({ elapsedMs: 30, truncated: true }) })
+  try {
+    const { result, elapsedMs } = await runtime.snapshot({ title: '记事本' })
+    assert.match(runtime.slowReadNote(result, elapsedMs), /truncated by the caps/u)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('the repeat guard refuses a third identical click that changed nothing', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot() })
+  try {
+    const button = { id: 'el_2', type: 'Button', patterns: ['invoke'] }
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_2', record: button }).blocked, false)
+    assert.equal(runtime.recordRepeat({ action: 'click', id: 'el_2' }, false), 1)
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_2', record: button }).blocked, false, 'the second click is still allowed')
+    assert.equal(runtime.recordRepeat({ action: 'click', id: 'el_2' }, false), 2)
+    const verdict = runtime.checkRepeat({ action: 'click', id: 'el_2', record: button })
+    assert.equal(verdict.blocked, true)
+    assert.equal(verdict.count, 2)
+
+    // A click that changed something clears the count again.
+    runtime.recordRepeat({ action: 'click', id: 'el_2' }, true)
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_2', record: button }).blocked, false)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('the repeat guard leaves state-bearing controls alone', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot() })
+  try {
+    const checkbox = { id: 'el_5', type: 'CheckBox', patterns: ['toggle'] }
+    runtime.recordRepeat({ action: 'click', id: 'el_5' }, false)
+    runtime.recordRepeat({ action: 'click', id: 'el_5' }, false)
+    runtime.recordRepeat({ action: 'click', id: 'el_5' }, false)
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_5', record: checkbox }).blocked, false, 'a checkbox can be toggled on and off without the tree changing')
+    // A different action is a different question entirely.
+    assert.equal(runtime.checkRepeat({ action: 'scroll', id: 'el_5', record: checkbox }).blocked, false)
+    // Without a known pattern list the guard stays silent rather than guessing.
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_9', record: null }).blocked, false)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a fresh snapshot clears the repeat counters', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot() })
+  try {
+    const button = { id: 'el_2', type: 'Button', patterns: ['invoke'] }
+    runtime.recordRepeat({ action: 'click', id: 'el_2' }, false)
+    runtime.recordRepeat({ action: 'click', id: 'el_2' }, false)
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_2', record: button }).blocked, true)
+    await runtime.snapshot({ title: '记事本' })
+    assert.equal(runtime.checkRepeat({ action: 'click', id: 'el_2', record: button }).blocked, false, 're-observing resets the guard')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('elementRecord finds the patterns a recent snapshot reported', async () => {
+  const { runtime, cleanup } = await runtimeWith({ snapshot: () => sampleSnapshot() })
+  try {
+    await runtime.snapshot({ title: '记事本' })
+    assert.deepEqual(runtime.elementRecord('el_2')?.patterns, ['invoke'])
+    assert.equal(runtime.elementRecord('el_404'), null)
+    assert.equal(runtime.elementRecord(undefined), null)
+  } finally {
+    await cleanup()
+  }
 })

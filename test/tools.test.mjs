@@ -251,6 +251,129 @@ test('desktop_act needs an id or a point', async () => {
   }
 })
 
+test('desktop_act reports a window the click opened', async () => {
+  const notepad = { hwnd: '0x11', pid: 111, process: 'notepad', title: '记事本' }
+  const dialog = { hwnd: '0x22', pid: 111, process: 'notepad', title: '另存为' }
+  let lists = 0
+  const { byName, cleanup } = await boot({
+    approval: approvalDouble(),
+    handlers: {
+      window: (params) => {
+        if (params.action === 'list') return { windows: lists++ === 0 ? [notepad] : [notepad, dialog] }
+        return { window: notepad, ok: true }
+      },
+      snapshot: () => sampleSnapshot(),
+      act: () => ({ ok: true, action: 'click', id: 'el_2', element: { type: 'Button', name: '保存' }, method: 'InvokePattern', window: notepad }),
+    },
+  })
+  try {
+    const value = await byName.get('desktop_act').execute({ action: 'click', id: 'el_2' }, exec)
+    assert.match(value.text, /new window appeared: "另存为" \(notepad pid=111\)/u)
+    assert.match(value.text, /hwnd 0x22/u)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a third identical no-op click is refused, and force overrides the guard', async () => {
+  const notepad = { hwnd: '0x11', pid: 111, process: 'notepad', title: '记事本' }
+  const acts = []
+  const { byName, sidecar, cleanup } = await boot({
+    approval: approvalDouble(),
+    handlers: {
+      window: (params) => (params.action === 'list' ? { windows: [notepad] } : { window: notepad, ok: true }),
+      snapshot: () => sampleSnapshot(),
+      act: (params) => {
+        acts.push(params)
+        return { ok: true, action: params.action, id: params.id, element: { type: 'Button', name: '保存' }, method: 'InvokePattern', window: notepad }
+      },
+    },
+  })
+  try {
+    const act = byName.get('desktop_act')
+    // The id comes from a snapshot, which is also what makes its patterns known.
+    await byName.get('desktop_snapshot').execute({ title: '记事本' }, exec)
+
+    const first = await act.execute({ action: 'click', id: 'el_2' }, exec)
+    assert.match(first.text, /no-op click number 1/u)
+    const second = await act.execute({ action: 'click', id: 'el_2' }, exec)
+    assert.match(second.text, /no-op click number 2/u, 'the second no-op click still runs, with a warning')
+    assert.equal(acts.length, 2)
+
+    const third = await act.execute({ action: 'click', id: 'el_2' }, exec)
+    assert.equal(third.ok, false)
+    assert.equal(third.refused, true)
+    assert.match(third.text, /^refused: the previous 2 "click" calls/u)
+    assert.match(third.text, /desktop_inspect \{id:"el_2"\}/u)
+    assert.match(third.text, /Pass force: true/u)
+    assert.equal(acts.length, 2, 'the refused click never reaches the sidecar')
+
+    const forced = await act.execute({ action: 'click', id: 'el_2', force: true }, exec)
+    assert.equal(forced.ok, true)
+    assert.equal(acts.length, 3, 'force clicks anyway')
+
+    // Re-reading the window is the intended way out of the guard.
+    await byName.get('desktop_snapshot').execute({ title: '记事本' }, exec)
+    const afterLook = await act.execute({ action: 'click', id: 'el_2' }, exec)
+    assert.equal(afterLook.ok, true, 'a fresh snapshot clears the guard')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('desktop_launch names the window the program opened', async () => {
+  const notepad = { hwnd: '0x11', pid: 111, process: 'notepad', title: '记事本' }
+  const editor = { hwnd: '0x33', pid: 333, process: 'notepad', title: '无标题 - 记事本' }
+  let lists = 0
+  const { byName, cleanup } = await boot({
+    approval: approvalDouble(),
+    handlers: {
+      window: (params) => {
+        if (params.action !== 'list') return { window: notepad, ok: true }
+        return { windows: lists++ === 0 ? [notepad] : [notepad, editor] }
+      },
+      launch: () => ({ pid: 333, process: 'notepad', exited: false }),
+    },
+  })
+  try {
+    const value = await byName.get('desktop_launch').execute({ target: 'notepad' }, exec)
+    assert.match(value.text, /launched "notepad" \(pid 333, notepad\)/u)
+    assert.match(value.text, /new window: "无标题 - 记事本" \(notepad pid=333\) hwnd 0x33/u)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('an unchanged desktop set adds no line to a launch', async () => {
+  const { byName, cleanup } = await boot({
+    approval: approvalDouble(),
+    handlers: {
+      window: (params) => (params.action === 'list' ? { windows: [{ hwnd: '0x11', process: 'notepad', title: '记事本' }] } : { window: { hwnd: '0x11', process: 'notepad', title: '记事本' }, ok: true }),
+      launch: () => ({ pid: 1, process: 'notepad', exited: true, exitCode: 0 }),
+    },
+  })
+  try {
+    const value = await byName.get('desktop_launch').execute({ target: 'notepad' }, exec)
+    assert.match(value.text, /exited with code 0/u)
+    assert.ok(!value.text.includes('new window'), `a finished process has no window to report:\n${value.text}`)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('desktop_snapshot explains a slow read and suggests query mode', async () => {
+  const { byName, cleanup } = await boot({
+    handlers: { snapshot: () => sampleSnapshot({ elapsedMs: 9000 }) },
+  })
+  try {
+    const value = await byName.get('desktop_snapshot').execute({ title: '记事本' }, exec)
+    assert.match(value.text, /took 9000 ms/u)
+    assert.match(value.text, /desktop_snapshot query/u)
+  } finally {
+    await cleanup()
+  }
+})
+
 test('desktop_input types text and sends key combinations', async () => {
   const { byName, sidecar, cleanup } = await boot({
     approval: approvalDouble(),

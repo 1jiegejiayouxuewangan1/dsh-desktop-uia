@@ -93,6 +93,16 @@ Two parts of a result matter most:
 
 Element ids (`el_12`) are keyed on the UIA runtime id, so they stay stable across re-snapshots of the same window and go stale only when the window rebuilds itself — in which case the tool reports `STALE_ELEMENT` and tells the model to snapshot again, rather than failing silently.
 
+### Feedback that keeps an agent honest
+
+Four behaviours exist because an agent that cannot see the screen makes predictable mistakes. All four are in the tool text, not in the docs, so the model reads them exactly when they apply.
+
+* **Windows that appear.** Every write action lists the desktop window set before and after, and names anything new: `new window appeared: "另存为" (notepad pid=111) — snapshot hwnd 0x22 to work there`. A dialog opened by a click, or a second window opened by a launch, is therefore visible to the model instead of silently swallowing the next action. `desktop_launch` additionally waits up to 5 s for the window it opened and reports its hwnd.
+* **Slow providers.** Read time is tracked per process. A window whose toolkit needs seconds to enumerate (Chromium, Java) is reported as slow, told to prefer `desktop_snapshot` with a `query {name|type|aid}` instead of a whole tree, and — from the next read on — silently capped (`maxNodes` 300, `maxDepth` 5) unless the call asks for more.
+* **Repeated no-op clicks.** Two consecutive `click`/`doubleClick`/`invoke` calls on the same element that both end in `no structural change` are allowed but labelled (`this is no-op click number 2…`); the third identical one is **refused** with instructions to inspect the element, scroll it into view, or use `setValue`/`select`/`expand`/`toggle`. State-bearing controls (checkbox, combo box, slider, scroller — `toggle`, `expandCollapse`, `selectItem`, `rangeValue`, `scroll`, `value`) are exempt, because their change can be invisible to a structural diff. A fresh `desktop_snapshot` clears the counter, and `desktop_act {force: true}` overrides the guard.
+* **Truncated reads.** A tree cut by the caps says so, with which limit to raise.
+
+
 ---
 
 ## Approval and safety
@@ -110,7 +120,7 @@ A write action passes two layers:
 
 `ask` is the default because a session whose DSH policy is `never` would otherwise fail every click: a plugin-local "refuse when nobody answers" rule cannot be satisfied when the deployment has deliberately disabled prompting. Set `always` to gate independently of the DSH preset.
 
-Every action is written to the action log (`<DSH_HOME>\storages\dsh-desktop-uia\audit.jsonl`, reads included, so "what did the model look at" is answerable) with time, tool, target window, outcome and refusal reason. A refusal is a normal result: the tool returns `refused` with the reason and tells the model not to retry the same call unchanged.
+Every action is written to the action log (`<DSH_HOME>\storages\dsh-desktop-uia\audit.jsonl`, reads included, so "what did the model look at" is answerable) with time, tool, target window, outcome and refusal reason. Turn **Log read-only calls too** off in the panel when a long control-tree exploration should not crowd the log — writes alone decide what happened. A refusal is a normal result: the tool returns `refused` with the reason and tells the model not to retry the same call unchanged.
 
 Boundaries — reported explicitly instead of pretending to work:
 
@@ -126,7 +136,7 @@ Boundaries — reported explicitly instead of pretending to work:
 * **Windows** — every visible top-level window; click a row to load its control tree, or bring it to the front.
 * **Control tree** — indented element list (id, type, name, available patterns, disabled/offscreen/focused markers); click an element for its properties.
 * **Action log** — time, tool, target and outcome of every action.
-* **Settings** — approval mode, trusted/denied/allowed process lists (with a one-click "add the foreground process to trusted"), post-action comparison, snapshot limits.
+* **Settings** — approval mode, trusted/denied/allowed process lists (with a one-click "add the foreground process to trusted"), post-action comparison, whether reads are logged, snapshot limits.
 
 The panel only observes and configures: it cannot click or type, so every state change still goes through a tool call and the approval policy.
 
@@ -149,20 +159,25 @@ Practical rules: name the target window, keep to one step at a time, and when so
 ## Verification
 
 ```powershell
-node --import ./test/helpers/register.mjs --test "test/*.test.mjs"   # 61 cases: format, policy, store, runtime, all 9 tools, panel render
+node --import ./test/helpers/register.mjs --test "test/*.test.mjs"   # 84 cases: format, policy, store, runtime, all 9 tools, panel render + real DOM
 node scripts/doctor.mjs                                              # machine + sidecar + live desktop + the whole tool layer
 $env:DSH_UIA_LIVE=1; node --test "test/sidecar.live.test.mjs"        # real-desktop integration
 sidecar\build.ps1 -SelfTest                                          # sidecar only
 ```
 
+The panel suite runs twice: once against a hook stand-in that captures what the component returns, and once mounted by real React into jsdom, which additionally exercises the mount load, window selection, tree selection and a settings save (`react`, `react-dom` and `jsdom` are development dependencies; both suites skip themselves when they are absent).
+
 What was verified on a real Windows 11 machine:
 
-* 61 automated cases pass (protocol, approval matrix, audit trail, tool contracts, panel rendering with real React).
-* `scripts/doctor.mjs` is green end to end: sidecar at PerMonitorV2, 18 windows enumerated, foreground window read in ~150 ms, element query hits, screenshot, clipboard, all 9 tools registered and exercised against the live desktop.
+* 84 automated cases pass (protocol, approval matrix, audit trail, tool contracts, panel rendering with real React in a real DOM, plus two live cases against the real desktop).
+* `scripts/doctor.mjs` is green end to end: sidecar at PerMonitorV2, 22 windows enumerated, foreground window read in ~100 ms, element query hits, screenshot, clipboard, the coordinate invariant below, all 9 tools registered and exercised against the live desktop.
+* The coordinate invariant is checked live: the centre of a real element's rectangle is resolved back through `WindowFromPoint` and must land on that element's own window. A DPI or virtual-screen mistake otherwise stays invisible, because a click at the wrong point still reports success.
+* The reliability batch was verified against the real desktop, not only against fakes: launching Notepad resolved the new window by hwnd (`0x1310B8`, found within the 5 s budget), the window-set diff reported it, the new window read 52 nodes, closing it reported `WindowPattern.Close`, and the repeat guard blocked the third identical no-op click.
 * The plugin was mounted in a real DSH host: `/plugins/dsh-desktop-uia/state` answers 401 without the browser cookie and 200 with it, the client bundle appears in the boot graph, and driving it through its own routes starts the sidecar and lists 19 real windows.
 * Full loop on a live desktop: launch Calculator → read the tree → 40 interactive elements found → four `Invoke` clicks (7, +, 8, =), each reporting its own diff → the display reads `15` → `desktop_inspect` confirms the element → the window is closed with `WindowPattern.Close` and a `gone` wait confirms it in 11 ms.
 
 Measured performance (same machine): Windows Terminal 23 elements 30–150 ms, Explorer 10–20 ms, VMware Workstation 77 elements ≈1 s, an Electron/Chromium window ≈1–2 s (its provider is simply slow; `patterns:"none"` is the fastest read there).
+
 
 ---
 
@@ -175,7 +190,9 @@ Measured performance (same machine): Windows Terminal 23 elements 30–150 ms, E
 | Terminals, games, Paint expose almost no controls | They draw themselves; UIA only sees the shell. Use `desktop_screenshot`, or coordinate clicks for that window. |
 | `WINDOW_MINIMIZED` / `WINDOW_OCCLUDED` on capture | A minimized window has no pixels; a fully covered window that does not support `PrintWindow` must be brought to the front first. |
 | Coordinate clicks land in the wrong place | Mixed-DPI multi-monitor setups. The sidecar declares PerMonitorV2 in its manifest; prefer element ids over coordinates. |
-| Electron/Chromium windows are slow to read | The provider itself is slow (roughly 1–2 s regardless of element count). Use `patterns:"none"`, or `query` to fetch just the element you need. |
+| Electron/Chromium windows are slow to read | The provider itself is slow (roughly 1–2 s regardless of element count). The tool now says so and caps the next read automatically; use `patterns:"none"`, or `query` to fetch just the element you need. |
+| The agent keeps clicking the same control with no effect | The third identical no-op click is refused on purpose. Re-snapshot the window, `desktop_inspect` the element, or act differently (`setValue`/`select`/`toggle`); `desktop_act {force: true}` bypasses the guard. |
+| A copy of the plugin is edited but nothing changes | DSH loads the copy under `<DSH_HOME>\profiles\<profile>\node_modules\dsh-desktop-uia`, not your checkout. Run `scripts/dev-sync.ps1` and restart DSH; `node scripts/doctor.mjs` reports when the installed copy is stale. |
 | Sidecar hangs or dies | Requests each run on their own thread behind a watchdog: a hang returns `TIMEOUT` and the sidecar stays usable; after five consecutive hangs it exits and the host starts a fresh one on the next call. |
 | Panel 404 | The host half is not mounted: the profile's bundle list lacks `dsh-desktop-uia`, or DSH was not restarted. |
 | Panel 401/403 when opened directly | Working as intended — the routes require the DSH browser-auth cookie. |
@@ -203,8 +220,10 @@ dsh-desktop-uia/
 │   ├── Program.cs          # line protocol, watchdog, error codes, --selftest
 │   ├── UiaSidecar.manifest # PerMonitorV2 + asInvoker
 │   └── build.ps1           # compiles with the in-box csc.exe
-├── scripts/doctor.mjs      # end-to-end diagnostics
-├── test/                   # node:test suites + fake ctx / fake sidecar / React shim
+├── scripts/
+│   ├── doctor.mjs          # end-to-end diagnostics (incl. stale-installed-copy and coordinate-invariant checks)
+│   └── dev-sync.ps1        # copy this checkout into the profile DSH actually loads
+├── test/                   # node:test suites + fake ctx / fake sidecar / React shim / real-DOM panel suite
 ├── install.cmd / uninstall.cmd        # double-click entry points (release package)
 ├── install.ps1 / uninstall.ps1
 └── README.md · GUIDE.md · README.zh-CN.md · 使用说明.md

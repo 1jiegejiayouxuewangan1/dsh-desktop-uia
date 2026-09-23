@@ -86,9 +86,19 @@ You can change this in the panel:
 | **Windows** | Every visible top-level window (process, title, PID, state); click a row to read its control tree, or "bring to front" |
 | **Control tree** | The element list of the selected window (id, type, name, available actions); click an element for its full properties |
 | **Action log** | What the AI did and looked at, the outcome, and whether anything was refused |
-| **Settings** | Everything from section 4; changes save immediately |
+| **Settings** | Everything from section 4; changes save immediately. "Log read-only calls too" off keeps the log to writes only, so a long exploration does not bury what actually changed |
 
 The panel only observes and configures — it never clicks anything. Every action still goes through a tool call and the approval policy.
+
+### Mistakes it now catches by itself (1.1)
+
+The AI cannot see your screen, so it makes a few predictable mistakes. Instead of leaving you to notice, the tool results tell it what happened:
+
+* **A click that opened a dialog** is reported with the new window's name and handle, so it continues there instead of acting on the old window. A launch waits up to 5 s and reports the window it opened.
+* **A window that is slow to read** (browsers, Electron apps) is named as slow, told to look up one element instead of a whole tree, and from the next read on is capped automatically.
+* **The same click with no effect, three times** is refused: the second is labelled, the third identical one stops with instructions to inspect the element or use a different method. Checkboxes and combo boxes are exempt (their state can change without the tree changing). Re-reading the window clears it; `force: true` overrides it.
+* **A tree cut by the snapshot limits** says so, and which limit to raise.
+
 
 ---
 
@@ -111,11 +121,20 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 **DSH must be restarted** after installing or removing: the tools and the panel only appear once the profile is reloaded.
 
+DSH loads the copy inside your profile (`<DSH_HOME>\profiles\<profile>\node_modules\dsh-desktop-uia`), not your checkout. After editing a few lines, sync instead of reinstalling — it compares file by file and copies only what changed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev-sync.ps1 -WhatIf   # show what would change
+powershell -ExecutionPolicy Bypass -File scripts\dev-sync.ps1           # write, then restart DSH
+```
+
 Self-check, also usable without DSH running (it really reads your desktop):
 
 ```powershell
 node scripts\doctor.mjs
 ```
+
+It ends with `RESULT: PASS` when everything works. `[FAIL] the installed copy matches this checkout` means the profile copy is older than your source — run `dev-sync.ps1`.
 
 ---
 
