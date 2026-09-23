@@ -278,7 +278,11 @@ test('the tree columns are laid out so the name cannot push the badges out', asy
     assert.equal(columns[0].style.flex, '0 0 54px', 'the id column is fixed so ids line up down the list')
     assert.equal(columns[1].style.flex, '0 0 112px', 'the type column is fixed')
     assert.equal(columns[2].style.flex, '1 1 auto', 'the name column takes the slack')
-    assert.equal(columns[3].style.flex, '0 0 auto', 'the badge tail keeps its own width')
+    assert.equal(columns[3].style.flex, '0 0 168px', 'the badge tail is a column of its own, so badges line up down the list')
+    const tail = [...columns[3].children]
+    assert.equal(tail.length, 2, 'inside the tail, badges and state flags are separate columns')
+    assert.equal(tail[0].style.textAlign, 'right', 'badges are right aligned, so they start at a stable x')
+    assert.equal(tail[1].style.textAlign, 'right', 'flags are right aligned at the row edge')
     assert.match(columns[2].style.overflow, /hidden/u, 'a long name is clipped instead of widening the row')
   } finally {
     await panel.unmount()
