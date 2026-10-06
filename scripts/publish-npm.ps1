@@ -215,7 +215,26 @@ $publishArgs = @('publish', '--access', 'public', '--tag', $Tag, '--registry', $
 if ($OTP) { $publishArgs += @('--otp', $OTP) }
 $result = Invoke-Npm $publishArgs
 $result | Where-Object { $_ -match 'npm notice|npm error|^\+ ' } | ForEach-Object { Say "  $($_.ToString().Trim())" }
-if ($script:nativeExit -ne 0) { Fail "publish failed: $($result -join ' | ')" }
+if ($script:nativeExit -ne 0) {
+  $text = $result -join ' '
+  if ($text -match 'Two-factor authentication or granular access token with bypass 2fa') {
+    Say ''
+    Say 'The account publishes with 2FA, and this token is not allowed to bypass it. Two ways out:' 'Yellow'
+    Say '  A. replace the token (once, then this script works unattended):' 'Yellow'
+    Say '     npmjs.com -> Access Tokens -> Generate New Token -> Granular Access Token' 'Yellow'
+    Say '     -> Packages: Read and write  ->  CHECK "Bypass two-factor authentication"' 'Yellow'
+    Say '     ...then paste the new token into %USERPROFILE%\.npmrc as before.' 'Yellow'
+    Say '  B. keep this token and pass a fresh 6-digit code from the authenticator each time:' 'Yellow'
+    Say '     powershell -ExecutionPolicy Bypass -File scripts\publish-npm.ps1 -OTP 123456' 'Yellow'
+    Fail 'the token must be allowed to bypass 2FA'
+  }
+  if ($text -match 'E403|403 Forbidden') {
+    Say ''
+    Say 'The registry refused the publish (403). Check that the token is not read-only and that the name is free:' 'Yellow'
+    Say "  https://www.npmjs.com/package/$name" 'Yellow'
+  }
+  Fail "publish failed: $text"
+}
 
 $check = $null
 try { $check = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
