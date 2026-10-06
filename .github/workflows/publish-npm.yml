@@ -1,0 +1,74 @@
+name: publish-npm
+
+# Publishes to npm from CI with npm trusted publishing (OIDC), so no long-lived
+# token exists anywhere: not in the repository, not in a secret, not on a
+# maintainer's machine. Configure the trust relationship once on npmjs.com
+# (package → Settings → Trusted Publisher), naming this file.
+#
+#   Release:  publishing a GitHub release publishes that tag to npm.
+#   Manual:   run this workflow from the Actions tab.
+#
+# The sidecar is compiled here before packing: sidecar/UiaSidecar.exe is a build
+# artifact and is not committed, while package.json ships it as a prebuilt binary
+# so an install never needs a compiler.
+#
+# No dependency install step: the test suite runs with zero runtime dependencies
+# and skips the two suites that need development-only ones (jsdom/react).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Pack and verify, but do not publish
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write # required for trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      # node 24 ships npm 11, which is what trusted publishing needs (>= 11.5.1).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+
+      - name: Build the sidecar with the in-box C# compiler
+        shell: pwsh
+        run: ./sidecar/build.ps1
+
+      - name: Tests
+        shell: pwsh
+        run: node --import ./test/helpers/register.mjs --test "test/*.test.mjs"
+
+      - name: Pack and verify the tarball
+        shell: pwsh
+        run: |
+          npm pack --silent
+          $tgz = Get-ChildItem *.tgz | Select-Object -First 1
+          if (-not $tgz) { throw 'npm pack produced no tarball' }
+          $entries = tar -tzf $tgz.FullName
+          foreach ($required in @('package/lib/index.js', 'package/lib/client.js', 'package/sidecar/UiaSidecar.exe', 'package/cordis.patch.yml', 'package/LICENSE')) {
+            if ($entries -notcontains $required) { throw "the tarball is missing $required" }
+          }
+          Write-Host "tarball: $($tgz.Name), $($entries.Count) entries, $([math]::Round($tgz.Length/1KB,1)) KB"
+
+      # Trusted publishing: no NODE_AUTH_TOKEN exists in this job; the npm CLI
+      # detects the OIDC environment and exchanges it for a short-lived token.
+      - name: Publish
+        if: ${{ github.event_name == 'release' || inputs.dry-run == false }}
+        run: npm publish --provenance --access public
+
+      - name: Publish (dry run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run == true }}
+        run: npm publish --provenance --access public --dry-run

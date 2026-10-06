@@ -187,6 +187,19 @@ What was verified on a real Windows 11 machine:
 
 Measured performance (same machine): Windows Terminal 23 elements 30–150 ms, Explorer 10–20 ms, VMware Workstation 77 elements ≈1 s, an Electron/Chromium window ≈1–2 s (its provider is simply slow; `patterns:"none"` is the fastest read there).
 
+---
+
+## Releasing
+
+Publishing runs in CI with [npm trusted publishing](https://docs.npmjs.com/trusted-publishers):
+`.github/workflows/publish-npm.yml` compiles the sidecar, runs the suite, verifies the tarball, and
+publishes with a short-lived OIDC token — no npm token is stored in the repository, in a secret, or
+on anyone's machine, and npm attaches a provenance attestation to the release. **Creating the GitHub
+release is the whole procedure**; the workflow does the rest.
+
+`pnpm run publish:npm` still exists for local publishing (it runs the same preflight checks and needs
+an npm login), but it is not the normal path: npm requires 2FA or a bypass-2FA token for publishing,
+and bypass tokens stop working for direct publishing in January 2027.
 
 ---
 
