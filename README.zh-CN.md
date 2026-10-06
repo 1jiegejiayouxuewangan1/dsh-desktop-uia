@@ -94,6 +94,14 @@ Agent ──▶ desktop_* 工具（宿主插件，含审批与审计）──▶
 
 **最省事的方式（不用命令行）**：到 [Releases](https://github.com/1jiegejiayouxuewangan1/dsh-desktop-uia/releases) 下载 zip，解压到任意目录，**双击 `install.cmd`**。压缩包里已经带了编译好的旁车，所以不会触发任何编译；脚本会把插件装进你的 DSH profile 并跑一次自检。装完重启 DSH Desktop。
 
+**从 npm 安装：**
+
+```powershell
+dsh plugin --profile web add dsh-desktop-uia
+```
+
+npm 包 [`dsh-desktop-uia`](https://www.npmjs.com/package/dsh-desktop-uia) 同样附带编译好的旁车。包内声明了 `os: win32`，因此非 Windows 机器会直接拒绝安装，而不是装上一个无法工作的插件。
+
 **从源码目录安装：**
 
 ```powershell

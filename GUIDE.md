@@ -106,6 +106,12 @@ The AI cannot see your screen, so it makes a few predictable mistakes. Instead o
 
 **Easiest way** (no command line): download the release zip, unzip it anywhere, then **double-click `install.cmd`**. It builds nothing (the release ships a compiled sidecar), installs the plugin into your DSH profile, and runs a self-check. Restart DSH Desktop afterwards.
 
+**From npm**, in one line (the package is published as [`dsh-desktop-uia`](https://www.npmjs.com/package/dsh-desktop-uia) and also ships the compiled sidecar):
+
+```powershell
+dsh plugin --profile web add dsh-desktop-uia
+```
+
 **From a clone or the source folder:**
 
 ```powershell

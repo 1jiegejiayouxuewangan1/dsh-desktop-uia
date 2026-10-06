@@ -41,6 +41,15 @@ Agent ──▶ desktop_* tools (host plugin: approval + audit + rendering)
 **double-click `install.cmd`**. That package already contains a compiled sidecar, so nothing is built;
 the script installs the plugin into your DSH profile and runs a self-check. Restart DSH Desktop afterwards.
 
+**From npm** (published as [`dsh-desktop-uia`](https://www.npmjs.com/package/dsh-desktop-uia)):
+
+```powershell
+dsh plugin --profile web add dsh-desktop-uia
+```
+
+The published package also carries the compiled sidecar, so this needs no compiler either. It is listed as
+`win32`-only, so a non-Windows machine refuses the install instead of ending up with a plugin that cannot work.
+
 **From a clone or the source folder:**
 
 ```powershell

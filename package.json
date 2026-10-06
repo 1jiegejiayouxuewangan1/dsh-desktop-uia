@@ -44,6 +44,7 @@
     "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File sidecar/build.ps1",
     "doctor": "node scripts/doctor.mjs",
     "dev-sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-sync.ps1",
+    "publish:npm": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-npm.ps1",
     "test": "node --import ./test/helpers/register.mjs --test \"test/*.test.mjs\"",
     "test:live": "node --import ./test/helpers/register.mjs --test test/sidecar.live.test.mjs"
   },
@@ -54,8 +55,11 @@
     "deepseek-harness",
     "cordis-plugin",
     "ui-automation",
+    "uia",
     "desktop-automation",
+    "desktop-control",
     "windows",
+    "windows-automation",
     "computer-use",
     "ai-agent"
   ],
@@ -69,6 +73,13 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "os": [
+    "win32"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.1 || ^0.1.1-rc.1 || ^0.1.2-rc.1"
