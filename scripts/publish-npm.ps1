@@ -127,8 +127,14 @@ if ($gitOnPath) {
 $pkg = [System.IO.File]::ReadAllText((Join-Path $root 'package.json'), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 $name = $pkg.name
 $version = $pkg.version
+# The publish target comes from package.json, so a mirror configured in the
+# user's .npmrc can neither redirect a publish nor make the auth check ask the
+# wrong server (a mirror answers "not logged in" for a perfectly good token).
+$registry = if ($pkg.publishConfig.registry) { $pkg.publishConfig.registry } else { 'https://registry.npmjs.org/' }
+$registry = $registry.TrimEnd('/')
 Say ''
 Say "package: $name@$version" 'Cyan'
+Say "registry: $registry"
 if (-not $pkg.dsh.bundle.patch) { Fail 'package.json must declare dsh.bundle.patch; a dsh.client-only manifest is not installable' }
 if (-not $pkg.os -or ($pkg.os -notcontains 'win32')) { Say 'note: package.json does not restrict this package to win32' 'Yellow' }
 
@@ -149,7 +155,7 @@ if ($script:gitCommand) {
 # -------------------------------------------------------- registry preflight
 $published = $null
 try {
-  $published = (Invoke-RestMethod -Uri "https://registry.npmjs.org/$name" -TimeoutSec 30 -ErrorAction Stop).'dist-tags'.latest
+  $published = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30 -ErrorAction Stop).'dist-tags'.latest
 } catch {
   if ($_.Exception.Response.StatusCode.value__ -ne 404) { Say "note: could not read the registry: $($_.Exception.Message)" 'Yellow' }
 }
@@ -181,7 +187,7 @@ Say "contents verified: $($entries.Count) entries, compiled sidecar present"
 
 # -------------------------------------------------------------------- auth
 Say ''
-$who = Invoke-Npm @('whoami')
+$who = Invoke-Npm @('whoami', '--registry', $registry)
 if (($who -join ' ') -match 'ENEEDAUTH|need auth|E401') {
   Say 'Not logged in to npm. Do this once, then run this script again:' 'Yellow'
   Say '  1. create a free account at https://www.npmjs.com/signup and verify the email' 'Yellow'
@@ -205,14 +211,14 @@ if ($DryRun) {
 
 Say ''
 Say "publishing $name@$version ..." 'Cyan'
-$publishArgs = @('publish', '--access', 'public', '--tag', $Tag)
+$publishArgs = @('publish', '--access', 'public', '--tag', $Tag, '--registry', $registry)
 if ($OTP) { $publishArgs += @('--otp', $OTP) }
 $result = Invoke-Npm $publishArgs
 $result | Where-Object { $_ -match 'npm notice|npm error|^\+ ' } | ForEach-Object { Say "  $($_.ToString().Trim())" }
 if ($script:nativeExit -ne 0) { Fail "publish failed: $($result -join ' | ')" }
 
 $check = $null
-try { $check = (Invoke-RestMethod -Uri "https://registry.npmjs.org/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
+try { $check = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
 Say ''
 if ($check -eq $version) {
   Say "published: https://www.npmjs.com/package/$name/v/$version" 'Green'
