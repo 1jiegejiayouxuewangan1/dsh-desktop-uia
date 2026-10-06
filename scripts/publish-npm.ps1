@@ -153,12 +153,22 @@ if ($script:gitCommand) {
 }
 
 # -------------------------------------------------------- registry preflight
-$published = $null
-try {
-  $published = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30 -ErrorAction Stop).'dist-tags'.latest
-} catch {
-  if ($_.Exception.Response.StatusCode.value__ -ne 404) { Say "note: could not read the registry: $($_.Exception.Message)" 'Yellow' }
+# The registry is served through a CDN, so a plain read can return a cached
+# packument that predates the last publish. A unique query string gives a fresh
+# answer; without it this check happily reports "already published" or "still the
+# old version".
+function Read-LatestVersion {
+  $url = "$registry/$name`?t=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+  try {
+    return (Invoke-RestMethod -Uri $url -TimeoutSec 30 -ErrorAction Stop).'dist-tags'.latest
+  } catch {
+    if ($_.Exception.Response.StatusCode.value__ -eq 404) { return $null }
+    Say "note: could not read the registry: $($_.Exception.Message)" 'Yellow'
+    return $null
+  }
 }
+
+$published = Read-LatestVersion
 if ($published -eq $version) { Fail "$name@$version is already published; bump the version first" }
 Say "registry: latest is $(if ($published) { $published } else { '(nothing published yet)' }); this run would publish $version"
 
@@ -244,11 +254,12 @@ if ($script:nativeExit -ne 0) {
   Fail "publish failed: $text"
 }
 
-# The registry can take a few seconds to serve the new dist-tag, so reading once
-# right after the publish reports "nothing" and looks like a failure. Retry.
+# The registry can take a few seconds to serve the new dist-tag, and a cached
+# read can keep serving the previous one indefinitely. Re-read through a unique
+# query string until the version shows up.
 $check = $null
 for ($attempt = 1; $attempt -le 6; $attempt++) {
-  try { $check = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
+  $check = Read-LatestVersion
   if ($check -eq $version) { break }
   Start-Sleep -Seconds 3
 }
