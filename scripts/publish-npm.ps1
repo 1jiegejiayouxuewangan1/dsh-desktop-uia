@@ -99,6 +99,30 @@ function Invoke-Npm([string[]]$arguments) {
 
 Say "npm version: $((Invoke-Npm @('--version') | Select-Object -First 1))"
 
+function Invoke-Git([string[]]$arguments) {
+  if (-not $script:gitCommand) { return @() }
+  return Invoke-Native $script:gitCommand $arguments
+}
+
+# Git is not always on PATH (GitHub Desktop ships its own copy), and the
+# working-tree guard is worth having, so look in the usual places too.
+$script:gitCommand = $null
+$gitOnPath = Get-Command git -ErrorAction SilentlyContinue
+if ($gitOnPath) {
+  $script:gitCommand = $gitOnPath.Source
+} else {
+  $candidates = @()
+  foreach ($glob in @(
+    (Join-Path $env:LOCALAPPDATA 'GitHubDesktop\app-*\resources\app\git\cmd\git.exe'),
+    (Join-Path $env:ProgramFiles 'Git\cmd\git.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Git\cmd\git.exe')
+  )) {
+    if ($glob) { $candidates += @(Get-ChildItem $glob -ErrorAction SilentlyContinue) }
+  }
+  $best = $candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($best) { $script:gitCommand = $best.FullName }
+}
+
 # ---------------------------------------------------------------- the package
 $pkg = [System.IO.File]::ReadAllText((Join-Path $root 'package.json'), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 $name = $pkg.name
@@ -109,16 +133,17 @@ if (-not $pkg.dsh.bundle.patch) { Fail 'package.json must declare dsh.bundle.pat
 if (-not $pkg.os -or ($pkg.os -notcontains 'win32')) { Say 'note: package.json does not restrict this package to win32' 'Yellow' }
 
 # ------------------------------------------------------------- working tree
-if (Get-Command git -ErrorAction SilentlyContinue) {
-  $dirty = Invoke-Native 'git' @('status', '--porcelain')
+if ($script:gitCommand) {
+  Say "git: $($script:gitCommand)"
+  $dirty = Invoke-Git @('status', '--porcelain')
   if ($dirty.Count -gt 0) { Fail "the working tree has uncommitted changes; commit them so the published tarball matches a commit:`n$($dirty -join "`n")" }
-  $head = (Invoke-Native 'git' @('rev-parse', 'HEAD') | Select-Object -First 1)
-  $branch = (Invoke-Native 'git' @('rev-parse', '--abbrev-ref', 'HEAD') | Select-Object -First 1)
-  $remote = (Invoke-Native 'git' @('rev-parse', "origin/$branch") | Select-Object -First 1)
+  $head = (Invoke-Git @('rev-parse', 'HEAD') | Select-Object -First 1)
+  $branch = (Invoke-Git @('rev-parse', '--abbrev-ref', 'HEAD') | Select-Object -First 1)
+  $remote = (Invoke-Git @('rev-parse', "origin/$branch") | Select-Object -First 1)
   if ($head -and $remote -and $head -ne $remote) { Fail "HEAD ($($head.Substring(0, 7))) is not pushed; the npm page links back to the repository, so push first" }
   Say "git: clean at $($head.Substring(0, 7)) on $branch"
 } else {
-  Say 'note: git not found; skipping the working-tree checks' 'Yellow'
+  Say 'note: no git found; skipping the dirty-tree and pushed-HEAD checks' 'Yellow'
 }
 
 # -------------------------------------------------------- registry preflight
