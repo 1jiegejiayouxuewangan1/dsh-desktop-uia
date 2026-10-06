@@ -244,8 +244,14 @@ if ($script:nativeExit -ne 0) {
   Fail "publish failed: $text"
 }
 
+# The registry can take a few seconds to serve the new dist-tag, so reading once
+# right after the publish reports "nothing" and looks like a failure. Retry.
 $check = $null
-try { $check = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
+for ($attempt = 1; $attempt -le 6; $attempt++) {
+  try { $check = (Invoke-RestMethod -Uri "$registry/$name" -TimeoutSec 30).'dist-tags'.latest } catch { $check = $null }
+  if ($check -eq $version) { break }
+  Start-Sleep -Seconds 3
+}
 Say ''
 if ($check -eq $version) {
   Say "published: https://www.npmjs.com/package/$name/v/$version" 'Green'

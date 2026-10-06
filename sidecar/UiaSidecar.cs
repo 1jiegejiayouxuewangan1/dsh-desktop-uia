@@ -1973,8 +1973,15 @@ namespace DshUia
                             "Use action \"click\" or \"toggle\" instead.");
                     el.TryGetCurrentPattern(SelectionItemPattern.Pattern, out raw);
                     SelectionItemPattern sp = (SelectionItemPattern)raw;
+                    // Read the state back: several providers (notably Chromium and
+                    // Electron) accept Select() and do nothing, so "the call returned"
+                    // is not evidence that the control changed. Both readings are
+                    // best-effort; a provider that refuses to answer simply adds
+                    // nothing, and the caller falls back to its structural diff.
+                    PutSelected(result, "selectedBefore", sp);
                     if (action == "select") sp.Select(); else sp.AddToSelection();
                     A.Put(result, "method", "SelectionItemPattern." + action);
+                    PutSelected(result, "selected", sp);
                     break;
                 }
 
@@ -1986,8 +1993,11 @@ namespace DshUia
                         throw new Fail("NO_PATTERN", "element is not a toggle (no Toggle pattern)",
                             "Use action \"click\" instead.");
                     el.TryGetCurrentPattern(TogglePattern.Pattern, out raw);
-                    ((TogglePattern)raw).Toggle();
+                    TogglePattern tp = (TogglePattern)raw;
+                    PutToggleState(result, "toggleBefore", tp);
+                    tp.Toggle();
                     A.Put(result, "method", "TogglePattern.Toggle");
+                    PutToggleState(result, "toggle", tp);
                     break;
                 }
 
@@ -2080,6 +2090,24 @@ namespace DshUia
         private static void RequireElement(AutomationElement el, string action)
         {
             if (el == null) throw new Fail("BAD_ARG", action + " needs an element id", "Get one from desktop_snapshot.");
+        }
+
+        /// <summary>
+        /// Record a selection state under <paramref name="key"/>, best effort. A
+        /// provider that throws simply contributes nothing, so the caller can tell
+        /// "the control said no" from "the control would not say".
+        /// </summary>
+        private static void PutSelected(Dictionary<string, object> result, string key, SelectionItemPattern sp)
+        {
+            try { A.Put(result, key, sp.Current.IsSelected); }
+            catch (Exception) { }
+        }
+
+        /// <summary>Record a toggle state under <paramref name="key"/>, best effort.</summary>
+        private static void PutToggleState(Dictionary<string, object> result, string key, TogglePattern tp)
+        {
+            try { A.Put(result, key, tp.Current.ToggleState.ToString()); }
+            catch (Exception) { }
         }
 
         private static bool TryInvoke(AutomationElement el)

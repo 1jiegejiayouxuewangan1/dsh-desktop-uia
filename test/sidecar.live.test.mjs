@@ -80,3 +80,24 @@ test('an unknown element id reports UNKNOWN_ELEMENT', { skip: live ? false : 'se
     await sidecar.stop()
   }
 })
+
+test('select reads the control state back instead of trusting the call', { skip: live ? false : 'set DSH_UIA_LIVE=1 with a built sidecar to run this' }, async () => {
+  const sidecar = new Sidecar({ exePath, buildScript: join(root, 'sidecar', 'build.ps1') })
+  try {
+    // Any window with a selectable element will do; the foreground one is the
+    // cheapest to read. Selecting the element that is already selected is
+    // deliberately harmless: this test proves the read-back plumbing, not the app.
+    const found = await sidecar.request('snapshot', { query: { interactiveOnly: true }, limit: 30 })
+    const candidate = (found.matches ?? []).find((element) => Array.isArray(element.patterns) && element.patterns.includes('selectItem'))
+    if (candidate === undefined) {
+      // No selectable control on screen; nothing to prove here.
+      return
+    }
+    const result = await sidecar.request('act', { action: 'select', id: candidate.id, settleMs: 60 })
+    assert.equal(result.method, 'SelectionItemPattern.select')
+    assert.equal(typeof result.selected, 'boolean', 'the sidecar must report what the control says after the call')
+    assert.equal(typeof result.selectedBefore, 'boolean', 'and what it said before, so a no-op is provable')
+  } finally {
+    await sidecar.stop()
+  }
+})

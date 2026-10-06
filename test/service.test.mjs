@@ -322,3 +322,52 @@ test('diffIsNoOp only trusts a complete, non-first, empty diff', () => {
   assert.equal(DesktopRuntime.diffIsNoOp({ first: false, added: 0, removed: 0, changed: 0, truncated: true }), false)
   assert.equal(DesktopRuntime.diffIsNoOp({ first: false, added: 0, removed: 1, changed: 0 }), false)
 })
+
+test('a selection the application ignored is reported, a real one is not', () => {
+  // The reading comes from the sidecar's read-back, which is the only honest
+  // evidence: the pattern call returning proves nothing.
+  const ignored = DesktopRuntime.ignoredStateNote({
+    action: 'select',
+    method: 'SelectionItemPattern.select',
+    selectedBefore: false,
+    selected: false,
+  })
+  assert.match(ignored, /still reports selected=false/u)
+  assert.match(ignored, /action:"click"/u)
+
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'select', selected: true }), null, 'a selection that stuck is silent')
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'select', selectedBefore: true, selected: true }), null, 'selecting what was already selected is silent')
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'select' }), null, 'no read-back, nothing provable')
+  // addToSelection has the same obligation as select: the control must end up selected.
+  assert.match(DesktopRuntime.ignoredStateNote({ action: 'addToSelection', selected: false }), /selected=false/u)
+
+  const stuckToggle = DesktopRuntime.ignoredStateNote({ action: 'toggle', method: 'TogglePattern.Toggle', toggleBefore: 'Off', toggle: 'Off' })
+  assert.match(stuckToggle, /still "Off"/u)
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'toggle', toggleBefore: 'Off', toggle: 'On' }), null)
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'toggle', toggle: 'On' }), null, 'half a reading is not proof')
+  assert.equal(DesktopRuntime.ignoredStateNote({ action: 'click' }), null)
+  assert.equal(DesktopRuntime.ignoredStateNote(undefined), null)
+})
+
+test('renderActionText prefers the precise read-back over the diff guess', () => {
+  const noop = { first: false, added: 0, removed: 0, changed: 0, lines: [], suppressed: 0 }
+  const precise = DesktopRuntime.renderActionText(
+    { action: 'select', method: 'SelectionItemPattern.select', id: 'el_9', element: { type: 'RadioButton', name: 'Read and write' }, selected: false },
+    noop,
+  )
+  assert.match(precise, /still reports selected=false/u)
+  assert.ok(!precise.includes('the window shows no change'), 'the precise note replaces the generic one')
+
+  const guessed = DesktopRuntime.renderActionText(
+    { action: 'select', method: 'SelectionItemPattern.select', id: 'el_9', element: { type: 'RadioButton', name: 'Read and write' } },
+    noop,
+  )
+  assert.match(guessed, /the window shows no change/u, 'without a read-back the diff is the fallback')
+
+  const fine = DesktopRuntime.renderActionText(
+    { action: 'select', method: 'SelectionItemPattern.select', id: 'el_9', element: { type: 'RadioButton', name: 'Read and write' }, selected: true },
+    noop,
+  )
+  assert.ok(!fine.includes('still reports selected=false'), 'a working selection is never called ignored')
+  assert.match(fine, /no structural change/u)
+})
